@@ -22,3 +22,6 @@ containerd;
 kube-proxy;
 компоненты Calico;
 пользовательские Pod.
+
+### Настройка 
+prepare.yaml - подготовка Ubuntu, swap, sysctl, containerd, kubelet, kubeadm, kubectl;

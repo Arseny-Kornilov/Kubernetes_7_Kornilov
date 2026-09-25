@@ -1,0 +1,42 @@
+---
+- name: Инициализировать control plane и локальный etcd
+  hosts: control_plane
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Создать каталог Kubernetes
+      ansible.builtin.file:
+        path: /etc/kubernetes
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Скопировать конфигурацию kubeadm
+      ansible.builtin.template:
+        src: templates/kubeadm-config.yaml.j2
+        dest: /etc/kubernetes/kubeadm-config.yaml
+        mode: "0600"
+
+    - name: Запустить kubeadm init
+      ansible.builtin.command: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml
+      args:
+        creates: /etc/kubernetes/admin.conf
+
+    - name: Создать каталог kubeconfig пользователя
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.kube"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Установить kubeconfig пользователя
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"

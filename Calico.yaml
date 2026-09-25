@@ -1,0 +1,41 @@
+---
+- name: Установить Calico CNI через Tigera Operator
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  tasks:
+    - name: Установить CRD Calico
+      ansible.builtin.shell: |
+        kubectl get crd installations.operator.tigera.io >/dev/null 2>&1 || \
+          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/v1_crd_projectcalico_org.yaml
+      args:
+        executable: /bin/bash
+      register: calico_crd
+      changed_when: "'created' in calico_crd.stdout"
+
+    - name: Установить Tigera Operator
+      ansible.builtin.shell: |
+        kubectl -n tigera-operator get deployment tigera-operator >/dev/null 2>&1 || \
+          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml
+      args:
+        executable: /bin/bash
+      register: tigera_operator
+      changed_when: "'created' in tigera_operator.stdout"
+
+    - name: Скопировать пользовательские ресурсы Calico
+      ansible.builtin.copy:
+        src: manifests/calico-custom-resources.yaml
+        dest: /tmp/calico-custom-resources.yaml
+        mode: "0644"
+
+    - name: Применить конфигурацию Calico
+      ansible.builtin.command: kubectl apply -f /tmp/calico-custom-resources.yaml
+      register: calico_apply
+      changed_when: "'created' in calico_apply.stdout or 'configured' in calico_apply.stdout"
+
+    - name: Дождаться готовности Tigera Operator
+      ansible.builtin.command: kubectl rollout status deployment/tigera-operator -n tigera-operator --timeout=300s
+      changed_when: false

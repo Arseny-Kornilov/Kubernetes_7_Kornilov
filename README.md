@@ -6,3 +6,19 @@
  - способ установки выбрать самостоятельно.
 
 ## Решение
+### На control plane (rmq01) запускаются:
+
+kube-apiserver;
+kube-controller-manager;
+kube-scheduler;
+локальный etcd;
+kubelet;
+containerd.
+
+### На worker-нодах запускаются:
+
+kubelet;
+containerd;
+kube-proxy;
+компоненты Calico;
+пользовательские Pod.

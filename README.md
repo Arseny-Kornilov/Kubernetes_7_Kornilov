@@ -39,3 +39,12 @@ kube-proxy;
 
 #### Проверка
 <img width="566" height="456" alt="image" src="https://github.com/user-attachments/assets/abc26fbf-bfde-41b5-9009-623e0de643de" />
+
+#### Демонстрация системных Pod и Calico:
+<img width="719" height="303" alt="image" src="https://github.com/user-attachments/assets/a248a78f-d931-491b-bbb7-b8202e55e5c0" />
+
+#### Запуск тестового приложения
+<img width="1169" height="117" alt="image" src="https://github.com/user-attachments/assets/4b1432fa-468c-4b87-bfd9-ce6d4d63a160" />
+
+#### Проверка доступности через curl к worker-1 и worker-2
+<img width="671" height="442" alt="image" src="https://github.com/user-attachments/assets/64dba48b-a5f4-4efd-b6e8-0c7be3dd5f49" />

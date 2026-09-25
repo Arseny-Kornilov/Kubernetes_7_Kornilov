@@ -46,5 +46,8 @@ kube-proxy;
 #### Запуск тестового приложения
 <img width="1169" height="117" alt="image" src="https://github.com/user-attachments/assets/4b1432fa-468c-4b87-bfd9-ce6d4d63a160" />
 
+#### Проверка CRI - containerd
+<img width="933" height="151" alt="image" src="https://github.com/user-attachments/assets/6437baf6-d06b-4974-8ac3-7fb2d31f20c5" />
+
 #### Проверка доступности через curl к worker-1 и worker-2
 <img width="671" height="442" alt="image" src="https://github.com/user-attachments/assets/64dba48b-a5f4-4efd-b6e8-0c7be3dd5f49" />

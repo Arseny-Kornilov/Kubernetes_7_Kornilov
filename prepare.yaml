@@ -1,0 +1,211 @@
+---
+- name: Подготовить все узлы Kubernetes
+  hosts: k8s_cluster
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Собрать минимальный набор системных фактов
+      ansible.builtin.setup:
+        gather_subset:
+          - "!all"
+          - min
+        gather_timeout: 30
+
+  tasks:
+    - name: Проверить семейство ОС
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_release == "jammy"
+        fail_msg: "Этот проект рассчитан на Ubuntu 22.04 LTS (Jammy)."
+
+    - name: Назначить hostname из inventory
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Обновить локальное имя узла в /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s+'
+        line: "127.0.1.1 {{ inventory_hostname }}"
+        state: present
+
+    - name: Добавить имена всех узлов в /etc/hosts
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE KUBERNETES HOSTS"
+        block: |
+          {% for host in groups['k8s_cluster'] %}
+          {{ hostvars[host].ansible_host }} {{ host }}
+          {% endfor %}
+
+    - name: Включить синхронизацию времени
+      ansible.builtin.systemd:
+        name: systemd-timesyncd
+        enabled: true
+        state: started
+
+    - name: Включить NTP через timedatectl
+      ansible.builtin.command: timedatectl set-ntp true
+      changed_when: false
+
+    - name: Отключить swap в текущем сеансе
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Отключить swap в /etc/fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(\s*[^#\n]+\s+\S+\s+swap\s+.*)$'
+        replace: '# \1'
+
+    - name: Настроить загрузку модулей ядра
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        mode: "0644"
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Загрузить модули ядра
+      ansible.builtin.command: "modprobe {{ item }}"
+      loop:
+        - overlay
+        - br_netfilter
+      changed_when: false
+
+    - name: Настроить sysctl для Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        mode: "0644"
+        content: |
+          net.bridge.bridge-nf-call-iptables  = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward                 = 1
+      notify: Применить sysctl
+
+    - name: Установить containerd и служебные пакеты
+      ansible.builtin.apt:
+        name:
+          - containerd
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gpg
+        state: present
+        update_cache: true
+
+    - name: Создать каталог конфигурации containerd
+      ansible.builtin.file:
+        path: /etc/containerd
+        state: directory
+        mode: "0755"
+
+    - name: Сгенерировать исходную конфигурацию containerd
+      ansible.builtin.shell: |
+        set -o pipefail
+        containerd config default > /etc/containerd/config.toml
+      args:
+        executable: /bin/bash
+        creates: /etc/containerd/config.toml
+      notify: Перезапустить containerd
+
+    - name: Включить systemd cgroup в containerd
+      ansible.builtin.replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+      notify: Перезапустить containerd
+
+    - name: Убедиться, что CRI plugin containerd не отключён
+      ansible.builtin.replace:
+        path: /etc/containerd/config.toml
+        regexp: '^disabled_plugins\s*=\s*\[[^\]]*"cri"[^\]]*\]$'
+        replace: 'disabled_plugins = []'
+      notify: Перезапустить containerd
+
+    - name: Обновить pause-образ containerd для Kubernetes
+      ansible.builtin.replace:
+        path: /etc/containerd/config.toml
+        regexp: 'sandbox_image = "[^"]+"'
+        replace: 'sandbox_image = "registry.k8s.io/pause:3.10"'
+      notify: Перезапустить containerd
+
+    - name: Создать каталог ключей APT
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Загрузить ключ репозитория Kubernetes
+      ansible.builtin.get_url:
+        url: "https://pkgs.k8s.io/core:/stable:/{{ kubernetes_minor }}/deb/Release.key"
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+        mode: "0644"
+
+    - name: Подключить репозиторий Kubernetes
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/{{ kubernetes_minor }}/deb/ /"
+        filename: kubernetes
+        state: present
+
+    - name: Установить kubelet, kubeadm и kubectl
+      ansible.builtin.apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: true
+      register: kubernetes_packages_install
+      retries: 5
+      delay: 20
+      until: kubernetes_packages_install is succeeded
+      throttle: 1
+
+    - name: Запретить автоматическое обновление компонентов Kubernetes
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Зафиксировать InternalIP узла на сети Host-only
+      ansible.builtin.copy:
+        dest: /etc/default/kubelet
+        mode: "0644"
+        content: |
+          KUBELET_EXTRA_ARGS="--node-ip={{ ansible_host }}"
+      notify: Перезапустить kubelet
+
+    - name: Немедленно применить обработчики
+      ansible.builtin.meta: flush_handlers
+
+    - name: Включить containerd и kubelet
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - containerd
+        - kubelet
+
+  handlers:
+    - name: Применить sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: true
+
+    - name: Перезапустить containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: true
+
+    - name: Перезапустить kubelet
+      ansible.builtin.systemd:
+        name: kubelet
+        state: restarted
+        daemon_reload: true

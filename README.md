@@ -1,1 +1,8 @@
-# Kubernetes_7_Kornilov
+# Домашнее задание к занятию «Установка Kubernetes»
+## Задание 1. Установить кластер Kubernetes с 1 master node
+ - подготовить кластер из 5 нод: 1 master/control-plane и 4 worker-ноды;
+ - использовать containerd в качестве CRI;
+ - запускать etcd на master-ноде;
+ - способ установки выбрать самостоятельно.
+
+## Решение

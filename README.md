@@ -25,3 +25,5 @@ kube-proxy;
 
 ### Настройка 
 prepare.yaml - подготовка Ubuntu, swap, sysctl, containerd, kubelet, kubeadm, kubectl;
+control-plane.yaml - kubeadm init на rmq01 и создание локального etcd;
+test.yaml - проверка готовности кластера

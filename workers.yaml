@@ -1,0 +1,29 @@
+---
+- name: Создать временную команду подключения
+  hosts: control_plane
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Создать bootstrap token со сроком жизни 2 часа
+      ansible.builtin.command: kubeadm token create --ttl 2h --print-join-command
+      register: kubeadm_join
+      changed_when: false
+      no_log: true
+
+    - name: Сохранить команду для текущего запуска Ansible
+      ansible.builtin.set_fact:
+        worker_join_command: "{{ kubeadm_join.stdout }} --cri-socket {{ cri_socket }}"
+      no_log: true
+
+- name: Подключить worker-узлы
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Выполнить kubeadm join
+      ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]].worker_join_command }}"
+      args:
+        creates: /etc/kubernetes/kubelet.conf
+      no_log: true

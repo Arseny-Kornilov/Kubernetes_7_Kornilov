@@ -1,0 +1,54 @@
+---
+- name: Проверить кластер и развернуть тестовое приложение
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  tasks:
+    - name: Скопировать тестовый манифест
+      ansible.builtin.copy:
+        src: manifests/demo-app.yaml
+        dest: /tmp/demo-app.yaml
+        mode: "0644"
+
+    - name: Дождаться готовности всех узлов
+      ansible.builtin.command: "kubectl wait --for=condition=Ready nodes --all --timeout=600s"
+      changed_when: false
+
+    - name: Применить манифест тестового приложения
+      ansible.builtin.command: kubectl apply -f /tmp/demo-app.yaml
+      register: demo_apply
+      changed_when: "'created' in demo_apply.stdout or 'configured' in demo_apply.stdout"
+
+    - name: Дождаться развертывания приложения
+      ansible.builtin.command: kubectl rollout status deployment/nginx-demo --timeout=300s
+      changed_when: false
+
+    - name: Получить список узлов
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodes_result
+      changed_when: false
+
+    - name: Получить список системных Pod
+      ansible.builtin.command: kubectl get pods -A -o wide
+      register: pods_result
+      changed_when: false
+
+    - name: Проверить размещение локального etcd
+      ansible.builtin.command: kubectl -n kube-system get pods -l component=etcd -o wide
+      register: etcd_result
+      changed_when: false
+
+    - name: Показать kubectl get nodes -o wide
+      ansible.builtin.debug:
+        var: nodes_result.stdout_lines
+
+    - name: Показать kubectl get pods -A -o wide
+      ansible.builtin.debug:
+        var: pods_result.stdout_lines
+
+    - name: Показать размещение etcd
+      ansible.builtin.debug:
+        var: etcd_result.stdout_lines
